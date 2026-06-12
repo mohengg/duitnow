@@ -3,7 +3,8 @@
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>DuitNow Payment</title>
+  <title>DuitNow QR Payment</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.min.js"></script>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -13,7 +14,7 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      padding: 2rem;
+      padding: 1.5rem;
     }
     .phone {
       width: 340px;
@@ -22,6 +23,7 @@
       overflow: hidden;
       box-shadow: 0 20px 60px rgba(0,0,0,0.5);
       border: 8px solid #111;
+      position: relative;
     }
     .status-bar {
       background: #111;
@@ -32,214 +34,350 @@
       justify-content: space-between;
       align-items: center;
     }
-    .status-bar .notch {
-      width: 80px; height: 18px;
-      background: #111;
-      border-radius: 0 0 12px 12px;
-      position: absolute;
-      left: 50%;
-      transform: translateX(-50%);
-      top: 0;
-    }
 
-    /* ====== SETUP SCREEN ====== */
-    #screen-setup { padding: 24px 20px; }
-    #screen-setup h2 { font-size: 16px; font-weight: 700; color: #111; margin-bottom: 4px; }
-    #screen-setup p { font-size: 12px; color: #888; margin-bottom: 20px; }
-    .field { margin-bottom: 14px; }
-    .field label { font-size: 12px; color: #555; display: block; margin-bottom: 5px; font-weight: 500; }
-    .field input {
+    /* ====== SCREEN MANAGER ====== */
+    .screen { display: none; }
+    .screen.active { display: block; }
+
+    /* ====== SCAN SCREEN ====== */
+    #screen-scan { text-align: center; }
+    .scan-header {
+      background: #E03A3E;
+      color: #fff;
+      padding: 14px 20px 18px;
+    }
+    .scan-header h2 { font-size: 16px; font-weight: 700; }
+    .scan-header p  { font-size: 11px; opacity: 0.85; margin-top: 3px; }
+
+    .scan-body { padding: 20px; }
+    .camera-box {
       width: 100%;
-      padding: 10px 12px;
-      border: 1.5px solid #ddd;
-      border-radius: 10px;
-      font-size: 14px;
-      font-family: inherit;
-      color: #111;
-      outline: none;
-      transition: border-color 0.2s;
+      aspect-ratio: 1;
+      background: #111;
+      border-radius: 16px;
+      overflow: hidden;
+      position: relative;
+      margin-bottom: 16px;
     }
-    .field input:focus { border-color: #E03A3E; }
-    .amount-row {
-      display: flex; align-items: center; gap: 8px;
-      border: 1.5px solid #ddd;
-      border-radius: 10px;
-      padding: 8px 12px;
-      transition: border-color 0.2s;
+    #video {
+      width: 100%; height: 100%;
+      object-fit: cover;
+      display: block;
     }
-    .amount-row:focus-within { border-color: #E03A3E; }
-    .amount-row span { font-size: 16px; font-weight: 600; color: #888; }
-    .amount-row input {
-      border: none; outline: none; background: transparent;
-      font-size: 26px; font-weight: 700; color: #111;
-      width: 100%; font-family: inherit;
-      padding: 0;
+    /* QR corner overlay */
+    .qr-overlay {
+      position: absolute; inset: 0;
+      display: flex; align-items: center; justify-content: center;
     }
-    .hint { font-size: 11px; color: #aaa; margin-top: 4px; }
-    .btn-proceed {
+    .qr-frame {
+      width: 160px; height: 160px;
+      position: relative;
+    }
+    .qr-frame::before, .qr-frame::after,
+    .qr-frame span::before, .qr-frame span::after {
+      content: '';
+      position: absolute;
+      width: 28px; height: 28px;
+      border-color: #E03A3E;
+      border-style: solid;
+    }
+    .qr-frame::before    { top: 0;    left: 0;  border-width: 3px 0 0 3px; }
+    .qr-frame::after     { top: 0;    right: 0; border-width: 3px 3px 0 0; }
+    .qr-frame span::before { bottom: 0; left: 0;  border-width: 0 0 3px 3px; }
+    .qr-frame span::after  { bottom: 0; right: 0; border-width: 0 3px 3px 0; }
+    /* scan line */
+    .scan-line {
+      position: absolute;
+      left: 10%; width: 80%; height: 2px;
+      background: linear-gradient(90deg, transparent, #E03A3E, transparent);
+      animation: scanMove 2s ease-in-out infinite;
+      top: 20px;
+    }
+    @keyframes scanMove {
+      0%   { top: 20px; }
+      50%  { top: calc(100% - 20px); }
+      100% { top: 20px; }
+    }
+    .scan-tip { font-size: 12px; color: #888; margin-bottom: 16px; line-height: 1.5; }
+
+    .btn-scan {
       width: 100%; padding: 13px;
       background: #E03A3E; color: #fff;
       border: none; border-radius: 12px;
       font-size: 15px; font-weight: 600;
       cursor: pointer; font-family: inherit;
-      margin-top: 20px;
-      transition: opacity 0.2s;
+      margin-bottom: 10px;
     }
-    .btn-proceed:disabled { opacity: 0.35; cursor: default; }
-    .btn-proceed:hover:not(:disabled) { background: #c42e31; }
+    .btn-scan:hover { background: #c42e31; }
+    .btn-manual {
+      width: 100%; padding: 11px;
+      background: transparent; color: #E03A3E;
+      border: 1.5px solid #E03A3E; border-radius: 12px;
+      font-size: 13px; font-weight: 600;
+      cursor: pointer; font-family: inherit;
+    }
+    .btn-manual:hover { background: #fdeaea; }
 
-    /* ====== PROCESSING SCREEN ====== */
-    #screen-processing {
-      display: none;
-      text-align: center;
-      padding: 60px 20px;
+    /* scanning active state */
+    #camera-placeholder {
+      position: absolute; inset: 0;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      color: #fff; gap: 10px;
     }
+    #camera-placeholder svg { opacity: 0.5; }
+    #camera-placeholder span { font-size: 12px; opacity: 0.6; }
+
+    .detected-badge {
+      display: none;
+      background: #e8f5e9; color: #2e7d32;
+      border-radius: 10px; padding: 10px 14px;
+      font-size: 12px; margin-bottom: 14px;
+      text-align: left; line-height: 1.6;
+      word-break: break-all;
+    }
+    .detected-badge strong { display: block; margin-bottom: 4px; font-size: 13px; }
+
+    /* ====== SETUP SCREEN ====== */
+    #screen-setup { padding: 0; }
+    .setup-header {
+      background: #E03A3E; color: #fff;
+      padding: 14px 20px 16px;
+    }
+    .setup-header h2 { font-size: 15px; font-weight: 700; }
+    .setup-header p  { font-size: 11px; opacity: 0.85; margin-top: 2px; }
+    .setup-body { padding: 16px 20px; }
+
+    .autofill-notice {
+      background: #fff8e1; border-left: 3px solid #f4a700;
+      border-radius: 8px; padding: 9px 12px;
+      font-size: 11px; color: #7a5c00; margin-bottom: 14px;
+      line-height: 1.5;
+    }
+    .field { margin-bottom: 12px; }
+    .field label {
+      font-size: 11px; color: #555; display: block;
+      margin-bottom: 4px; font-weight: 600;
+      text-transform: uppercase; letter-spacing: 0.4px;
+    }
+    .field-autofilled label::after {
+      content: ' ✓ Auto-filled';
+      color: #2e7d32; font-weight: 600; text-transform: none; letter-spacing: 0;
+    }
+    .field input {
+      width: 100%;
+      padding: 9px 12px;
+      border: 1.5px solid #ddd;
+      border-radius: 10px;
+      font-size: 13px;
+      font-family: inherit;
+      color: #111;
+      outline: none;
+      transition: border-color 0.2s, background 0.2s;
+    }
+    .field input:focus { border-color: #E03A3E; }
+    .field-autofilled input { background: #f0fff4; border-color: #81c784; }
+
+    .amount-row {
+      display: flex; align-items: center; gap: 8px;
+      border: 1.5px solid #ddd;
+      border-radius: 10px;
+      padding: 6px 12px;
+      transition: border-color 0.2s;
+    }
+    .amount-row:focus-within { border-color: #E03A3E; }
+    .amount-row span { font-size: 14px; font-weight: 700; color: #888; }
+    .amount-row input {
+      border: none; outline: none; background: transparent;
+      font-size: 24px; font-weight: 700; color: #111;
+      width: 100%; font-family: inherit; padding: 0;
+    }
+    .hint { font-size: 11px; color: #aaa; margin-top: 3px; }
+
+    .btn-row { display: flex; gap: 8px; margin-top: 16px; }
+    .btn-back {
+      padding: 12px 16px;
+      background: transparent; color: #E03A3E;
+      border: 1.5px solid #E03A3E; border-radius: 12px;
+      font-size: 13px; font-weight: 600;
+      cursor: pointer; font-family: inherit;
+    }
+    .btn-pay {
+      flex: 1; padding: 12px;
+      background: #E03A3E; color: #fff;
+      border: none; border-radius: 12px;
+      font-size: 14px; font-weight: 600;
+      cursor: pointer; font-family: inherit;
+    }
+    .btn-pay:disabled { opacity: 0.35; cursor: default; }
+    .btn-pay:hover:not(:disabled) { background: #c42e31; }
+
+    /* ====== PROCESSING ====== */
+    #screen-processing { text-align: center; padding: 60px 20px; }
     .spinner {
-      width: 56px; height: 56px; border-radius: 50%;
-      border: 3px solid #eee;
-      border-top-color: #E03A3E;
+      width: 52px; height: 52px; border-radius: 50%;
+      border: 3px solid #eee; border-top-color: #E03A3E;
       animation: spin 0.8s linear infinite;
-      margin: 0 auto 24px;
+      margin: 0 auto 20px;
     }
     @keyframes spin { to { transform: rotate(360deg); } }
-    .proc-title { font-size: 15px; font-weight: 600; color: #111; margin-bottom: 6px; }
-    .proc-sub { font-size: 12px; color: #999; }
 
-    /* ====== SUCCESS SCREEN ====== */
+    /* ====== SUCCESS ====== */
     #screen-success { display: none; }
-
     .success-top {
       background: #f9f9f9;
-      padding: 30px 20px 24px;
+      padding: 28px 20px 22px;
       text-align: center;
       border-bottom: 1px solid #eee;
     }
-    /* Animated tick circle */
     .tick-wrap {
-      width: 70px; height: 70px;
-      border-radius: 50%;
+      width: 68px; height: 68px; border-radius: 50%;
       background: linear-gradient(135deg, #43c46e, #2ea85a);
       display: flex; align-items: center; justify-content: center;
-      margin: 0 auto 14px;
+      margin: 0 auto 12px;
       animation: popIn 0.45s cubic-bezier(0.175,0.885,0.32,1.275);
-      position: relative;
     }
     @keyframes popIn { from { transform: scale(0.3); opacity: 0; } to { transform: scale(1); opacity: 1; } }
-    /* confetti dots */
-    .tick-wrap::before, .tick-wrap::after {
-      content: '';
-      position: absolute;
-      width: 8px; height: 8px; border-radius: 50%;
-    }
-    .tick-wrap::before { background: #f4c430; top: -6px; right: 4px; }
-    .tick-wrap::after  { background: #E03A3E;  bottom: -4px; left: 2px; }
-    .tick-svg { width: 32px; height: 32px; }
-    .tick-svg path { stroke: #fff; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; fill: none; stroke-dasharray: 40; stroke-dashoffset: 40; animation: drawTick 0.4s 0.35s forwards ease-out; }
+    .tick-svg { width: 30px; height: 30px; }
+    .tick-svg path { stroke: #fff; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; fill: none; stroke-dasharray: 40; stroke-dashoffset: 40; animation: drawTick 0.4s 0.35s forwards; }
     @keyframes drawTick { to { stroke-dashoffset: 0; } }
+    .success-label { font-size: 22px; font-weight: 700; color: #222; margin-bottom: 5px; }
+    .success-note  { font-size: 11px; color: #999; line-height: 1.5; margin-bottom: 16px; }
+    .total-label   { font-size: 11px; color: #888; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 3px; }
+    .total-amount  { font-size: 36px; font-weight: 800; color: #111; letter-spacing: -1px; }
+    .total-date    { font-size: 12px; color: #999; margin-top: 4px; }
 
-    .success-label { font-size: 22px; font-weight: 700; color: #222; margin-bottom: 6px; }
-    .success-note { font-size: 11px; color: #999; line-height: 1.5; margin-bottom: 18px; }
-    .total-label { font-size: 12px; color: #888; margin-bottom: 4px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.5px; }
-    .total-amount { font-size: 38px; font-weight: 800; color: #111; letter-spacing: -1px; }
-    .total-currency { font-size: 18px; font-weight: 600; }
-    .total-date { font-size: 12px; color: #999; margin-top: 4px; }
-
-    /* Receipt body */
-    .receipt-body { padding: 16px 20px 24px; }
+    .receipt-body  { padding: 14px 20px 10px; }
     .receipt-row {
-      display: flex;
-      justify-content: space-between;
-      align-items: flex-start;
-      padding: 9px 0;
-      border-bottom: 1px solid #f2f2f2;
-      gap: 12px;
+      display: flex; justify-content: space-between;
+      align-items: flex-start; padding: 8px 0;
+      border-bottom: 1px solid #f2f2f2; gap: 10px;
     }
     .receipt-row:last-child { border-bottom: none; }
-    .rk { font-size: 12px; color: #999; flex-shrink: 0; width: 120px; line-height: 1.4; }
-    .rv {
-      font-size: 12px; color: #111; font-weight: 600;
-      text-align: right; line-height: 1.4;
-    }
+    .rk { font-size: 11px; color: #999; flex-shrink: 0; width: 115px; line-height: 1.4; }
+    .rv { font-size: 11px; color: #111; font-weight: 600; text-align: right; line-height: 1.4; }
     .section-title {
-      font-size: 13px; font-weight: 700; color: #222;
-      margin: 16px 0 4px;
-      padding-bottom: 6px;
+      font-size: 12px; font-weight: 700; color: #222;
+      margin: 14px 0 2px;
+      padding-bottom: 5px;
       border-bottom: 2px solid #E03A3E;
       display: inline-block;
     }
     .btn-new {
       display: block; width: calc(100% - 40px);
-      margin: 4px 20px 24px;
-      padding: 13px;
+      margin: 6px 20px 22px;
+      padding: 12px;
       background: transparent; color: #E03A3E;
       border: 1.5px solid #E03A3E; border-radius: 12px;
-      font-size: 14px; font-weight: 600;
+      font-size: 13px; font-weight: 600;
       cursor: pointer; font-family: inherit;
-      text-align: center;
     }
     .btn-new:hover { background: #fdeaea; }
   </style>
 </head>
 <body>
-
 <div class="phone">
   <div class="status-bar">
-    <span>9:41</span>
+    <span id="clock">9:41</span>
     <span>▲ ● ■</span>
   </div>
 
-  <!-- SETUP SCREEN -->
-  <div id="screen-setup">
-    <h2>DuitNow QR Payment</h2>
-    <p>Fill in the details before scanning QR</p>
-
-    <div class="field">
-      <label>Recipient / Shop Name</label>
-      <input type="text" id="inp-shop" placeholder="e.g. Sushi King" />
+  <!-- ===== SCAN SCREEN ===== -->
+  <div id="screen-scan" class="screen active">
+    <div class="scan-header">
+      <h2>DuitNow QR</h2>
+      <p>Scan merchant QR code to pay</p>
     </div>
-    <div class="field">
-      <label>Recipient Reference</label>
-      <input type="text" id="inp-ref" placeholder="e.g. Dinner at MidValley" />
-    </div>
-    <div class="field">
-      <label>Other Payment Details</label>
-      <input type="text" id="inp-details" placeholder="e.g. Sushi King" />
-    </div>
-    <div class="field">
-      <label>Request To (Full Name)</label>
-      <input type="text" id="inp-name" placeholder="e.g. Robin Hood" />
-    </div>
-    <div class="field">
-      <label>Bank &amp; Account No.</label>
-      <input type="text" id="inp-bank" placeholder="e.g. CIMB MALAYSIA 7004944822" />
-    </div>
-    <div class="field">
-      <label>Nickname</label>
-      <input type="text" id="inp-nick" placeholder="e.g. Robin Hood CIMB" />
-    </div>
-    <div class="field">
-      <label>Amount (MYR)</label>
-      <div class="amount-row">
-        <span>MYR</span>
-        <input type="number" id="inp-amount" placeholder="0.00" min="0.01" step="0.01" />
+    <div class="scan-body">
+      <div class="camera-box">
+        <div id="camera-placeholder">
+          <svg width="48" height="48" fill="none" viewBox="0 0 24 24" stroke="white" stroke-width="1.5">
+            <rect x="3" y="7" width="18" height="13" rx="2"/>
+            <path d="M8 7V5a2 2 0 014 0v2"/>
+            <circle cx="12" cy="13.5" r="2.5"/>
+          </svg>
+          <span>Camera inactive</span>
+        </div>
+        <video id="video" autoplay playsinline muted style="display:none;"></video>
+        <canvas id="canvas" style="display:none;"></canvas>
+        <div class="qr-overlay">
+          <div class="qr-frame"><span></span></div>
+          <div class="scan-line" id="scan-line" style="display:none;"></div>
+        </div>
       </div>
-      <div class="hint">Min: MYR 0.01 · Max: MYR 30,000.00</div>
+
+      <div class="detected-badge" id="detected-badge">
+        <strong>✅ QR Detected!</strong>
+        <span id="detected-text"></span>
+      </div>
+
+      <p class="scan-tip">Point your camera at a DuitNow QR code. The app will auto-read merchant info.</p>
+
+      <button class="btn-scan" id="btn-open-camera" onclick="startCamera()">📷 &nbsp;Open Camera & Scan</button>
+      <button class="btn-manual" onclick="goToSetup(null)">✏️ &nbsp;Enter Details Manually</button>
     </div>
-
-    <button class="btn-proceed" id="btn-proceed" onclick="startPay()">
-      Proceed to Pay
-    </button>
   </div>
 
-  <!-- PROCESSING -->
-  <div id="screen-processing">
+  <!-- ===== SETUP SCREEN ===== -->
+  <div id="screen-setup" class="screen">
+    <div class="setup-header">
+      <h2>Payment Details</h2>
+      <p>Review and complete the information</p>
+    </div>
+    <div class="setup-body">
+      <div class="autofill-notice" id="autofill-notice" style="display:none;">
+        ⚡ Some fields were auto-filled from the QR code. Please verify before paying.
+      </div>
+
+      <div class="field" id="field-shop">
+        <label>Shop / Recipient Name</label>
+        <input type="text" id="inp-shop" placeholder="e.g. Sushi King"/>
+      </div>
+      <div class="field" id="field-ref">
+        <label>Recipient Reference</label>
+        <input type="text" id="inp-ref" placeholder="e.g. Dinner at MidValley"/>
+      </div>
+      <div class="field" id="field-details">
+        <label>Other Payment Details</label>
+        <input type="text" id="inp-details" placeholder="e.g. Sushi King"/>
+      </div>
+      <div class="field" id="field-name">
+        <label>Request To (Full Name)</label>
+        <input type="text" id="inp-name" placeholder="e.g. Robin Hood"/>
+      </div>
+      <div class="field" id="field-bank">
+        <label>Bank &amp; Account No.</label>
+        <input type="text" id="inp-bank" placeholder="e.g. CIMB MALAYSIA 7004944822"/>
+      </div>
+      <div class="field" id="field-nick">
+        <label>Nickname</label>
+        <input type="text" id="inp-nick" placeholder="e.g. Robin Hood CIMB"/>
+      </div>
+      <div class="field">
+        <label>Amount (MYR)</label>
+        <div class="amount-row">
+          <span>MYR</span>
+          <input type="number" id="inp-amount" placeholder="0.00" min="0.01" step="0.01"/>
+        </div>
+        <div class="hint">Min: MYR 0.01 · Max: MYR 30,000.00</div>
+      </div>
+
+      <div class="btn-row">
+        <button class="btn-back" onclick="goToScan()">← Back</button>
+        <button class="btn-pay" id="btn-pay" onclick="startPay()" disabled>Pay Now</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== PROCESSING ===== -->
+  <div id="screen-processing" class="screen">
     <div class="spinner"></div>
-    <div class="proc-title">Processing your request...</div>
-    <div class="proc-sub">Please do not close this app</div>
+    <p style="font-size:14px;font-weight:600;color:#111;">Processing payment...</p>
+    <p style="font-size:12px;color:#999;margin-top:6px;">Please do not close this app</p>
   </div>
 
-  <!-- SUCCESS -->
-  <div id="screen-success">
+  <!-- ===== SUCCESS ===== -->
+  <div id="screen-success" class="screen">
     <div class="success-top">
       <div class="tick-wrap">
         <svg class="tick-svg" viewBox="0 0 32 32">
@@ -249,10 +387,9 @@
       <div class="success-label">Successful</div>
       <div class="success-note">You'll be notified via push notification/SMS on payment status for this DuitNow Request.</div>
       <div class="total-label">Total Request Amount</div>
-      <div class="total-amount"><span class="total-currency">MYR </span><span id="disp-amount">0.00</span></div>
+      <div class="total-amount">MYR <span id="disp-amount">0.00</span></div>
       <div class="total-date" id="disp-datetime">—</div>
     </div>
-
     <div class="receipt-body">
       <div class="receipt-row">
         <span class="rk">Reference No.</span>
@@ -266,9 +403,7 @@
         <span class="rk">When</span>
         <span class="rv" id="disp-when">—</span>
       </div>
-
       <div class="section-title">DuitNow Request Details</div>
-
       <div class="receipt-row">
         <span class="rk">Request Date</span>
         <span class="rv" id="disp-reqdate">—</span>
@@ -298,50 +433,208 @@
         <span class="rv" id="disp-reqamt">—</span>
       </div>
     </div>
-
-    <button class="btn-new" onclick="resetFlow()">↺ &nbsp;Make Another Payment</button>
+    <button class="btn-new" onclick="resetAll()">↺ &nbsp;Make Another Payment</button>
   </div>
 </div>
 
 <script>
-  // Enable button only when amount + shop filled
-  ['inp-amount','inp-shop'].forEach(id => {
-    document.getElementById(id).addEventListener('input', checkReady);
-  });
+  // Live clock
+  function updateClock() {
+    const now = new Date();
+    let h = now.getHours(), m = now.getMinutes();
+    document.getElementById('clock').textContent =
+      (h < 10 ? '0'+h : h) + ':' + (m < 10 ? '0'+m : m);
+  }
+  updateClock(); setInterval(updateClock, 10000);
 
-  function checkReady() {
+  // Screen manager
+  function show(id) {
+    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+    const el = document.getElementById(id);
+    if (el) el.classList.add('active');
+  }
+
+  // ─── CAMERA & QR ───────────────────────────────────────────────
+  let videoStream = null;
+  let scanInterval = null;
+  let scanning = false;
+
+  async function startCamera() {
+    const btn = document.getElementById('btn-open-camera');
+    btn.textContent = '⏳ Starting camera...';
+    btn.disabled = true;
+    try {
+      videoStream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'environment', width: { ideal: 640 }, height: { ideal: 640 } }
+      });
+      const video = document.getElementById('video');
+      video.srcObject = videoStream;
+      video.style.display = 'block';
+      document.getElementById('camera-placeholder').style.display = 'none';
+      document.getElementById('scan-line').style.display = 'block';
+      btn.textContent = '🔍 Scanning... (point at QR)';
+      scanning = true;
+      scanInterval = setInterval(scanFrame, 300);
+    } catch (e) {
+      btn.textContent = '📷 Open Camera & Scan';
+      btn.disabled = false;
+      alert('Camera access denied or not available.\nPlease allow camera permission and try again, or use "Enter Details Manually".');
+    }
+  }
+
+  function scanFrame() {
+    if (!scanning) return;
+    const video = document.getElementById('video');
+    if (video.readyState !== video.HAVE_ENOUGH_DATA) return;
+    const canvas = document.getElementById('canvas');
+    canvas.width  = video.videoWidth;
+    canvas.height = video.videoHeight;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const code = jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: 'dontInvert' });
+    if (code && code.data) {
+      scanning = false;
+      clearInterval(scanInterval);
+      stopCamera();
+      handleQRData(code.data);
+    }
+  }
+
+  function stopCamera() {
+    if (videoStream) {
+      videoStream.getTracks().forEach(t => t.stop());
+      videoStream = null;
+    }
+    document.getElementById('video').style.display = 'none';
+    document.getElementById('scan-line').style.display = 'none';
+    document.getElementById('camera-placeholder').style.display = 'flex';
+    const btn = document.getElementById('btn-open-camera');
+    btn.textContent = '📷 Open Camera & Scan';
+    btn.disabled = false;
+  }
+
+  // ─── QR DATA PARSER ────────────────────────────────────────────
+  // DuitNow QR follows EMVCo / MyQR spec (similar to QR payment standards)
+  // Tags: 00=payload format, 26/29=merchant account, 52=MCC, 54=amount, 58=country, 59=merchant name, 60=city
+  function parseDuitNowQR(raw) {
+    const result = { raw, name: '', bank: '', amount: '', ref: '', city: '' };
+    try {
+      let i = 0;
+      while (i < raw.length - 3) {
+        const tag = raw.substring(i, i+2);
+        const len = parseInt(raw.substring(i+2, i+4), 10);
+        if (isNaN(len)) break;
+        const val = raw.substring(i+4, i+4+len);
+        if (tag === '59') result.name = val;           // Merchant Name
+        if (tag === '60') result.city = val;           // City
+        if (tag === '54') result.amount = val;         // Transaction Amount
+        // nested tag inside 26 or 29 (merchant account info)
+        if (tag === '26' || tag === '29') {
+          let j = 0;
+          while (j < val.length - 3) {
+            const t2 = val.substring(j, j+2);
+            const l2 = parseInt(val.substring(j+2, j+4), 10);
+            if (isNaN(l2)) break;
+            const v2 = val.substring(j+4, j+4+l2);
+            if (t2 === '01') result.bank = v2;         // bank/merchant ID
+            if (t2 === '00') result.guid = v2;
+            j += 4 + l2;
+          }
+        }
+        i += 4 + len;
+      }
+    } catch(e) {}
+    return result;
+  }
+
+  function handleQRData(raw) {
+    const badge = document.getElementById('detected-badge');
+    badge.style.display = 'block';
+    document.getElementById('detected-text').textContent = raw.length > 80 ? raw.slice(0,80)+'…' : raw;
+
+    const parsed = parseDuitNowQR(raw);
+
+    // Short delay so user sees the detected badge, then go to setup
+    setTimeout(() => goToSetup(parsed), 900);
+  }
+
+  // ─── SETUP SCREEN ──────────────────────────────────────────────
+  function goToSetup(parsed) {
+    stopCamera();
+    clearInterval(scanInterval);
+
+    // Reset autofill highlights
+    ['shop','ref','details','name','bank','nick'].forEach(f => {
+      document.getElementById('field-'+f).classList.remove('field-autofilled');
+    });
+
+    const notice = document.getElementById('autofill-notice');
+    let anyFilled = false;
+
+    function fill(fieldId, inputId, val) {
+      if (val && val.trim()) {
+        document.getElementById(inputId).value = val.trim();
+        document.getElementById('field-'+fieldId).classList.add('field-autofilled');
+        anyFilled = true;
+      } else {
+        document.getElementById(inputId).value = '';
+      }
+    }
+
+    if (parsed) {
+      fill('shop',    'inp-shop',    parsed.name);
+      fill('bank',    'inp-bank',    parsed.bank);
+      fill('details', 'inp-details', parsed.name || '');
+      fill('nick',    'inp-nick',    parsed.name ? parsed.name + ' (QR)' : '');
+      if (parsed.amount) {
+        document.getElementById('inp-amount').value = parsed.amount;
+        anyFilled = true;
+      }
+    }
+
+    notice.style.display = anyFilled ? 'block' : 'none';
+    show('screen-setup');
+    checkPayReady();
+  }
+
+  function goToScan() {
+    document.getElementById('detected-badge').style.display = 'none';
+    show('screen-scan');
+  }
+
+  ['inp-amount','inp-shop'].forEach(id => {
+    document.getElementById(id).addEventListener('input', checkPayReady);
+  });
+  function checkPayReady() {
     const amt = parseFloat(document.getElementById('inp-amount').value);
     const shop = document.getElementById('inp-shop').value.trim();
-    document.getElementById('btn-proceed').disabled = !(amt > 0 && amt <= 30000 && shop);
+    document.getElementById('btn-pay').disabled = !(amt > 0 && amt <= 30000 && shop);
   }
-  checkReady();
 
+  // ─── PAYMENT ───────────────────────────────────────────────────
   function startPay() {
-    const amt = parseFloat(document.getElementById('inp-amount').value);
-    if (!amt) return;
     show('screen-processing');
-    setTimeout(() => buildSuccess(amt), 2200);
+    setTimeout(() => buildSuccess(), 2200);
   }
 
-  function buildSuccess(amt) {
-    const now = new Date();
-
-    // helpers
-    const pad = n => String(n).padStart(2,'0');
-    const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-    const dayStr = pad(now.getDate()) + ' ' + months[now.getMonth()] + ' ' + now.getFullYear();
-    const timeStr = pad(now.getHours()) + ':' + pad(now.getMinutes()) + ':' + pad(now.getSeconds())
-      + ' ' + (now.getHours() < 12 ? 'AM' : 'PM');
-    const refNo = 'REF-' + Math.floor(10000000000 + Math.random() * 90000000000);
-    const accNo = Math.floor(1000000000 + Math.random() * 9000000000);
-    const fmtAmt = 'MYR ' + amt.toFixed(2);
-
+  function buildSuccess() {
+    const amt     = parseFloat(document.getElementById('inp-amount').value);
     const shop    = document.getElementById('inp-shop').value.trim()    || '—';
     const recRef  = document.getElementById('inp-ref').value.trim()     || '—';
     const other   = document.getElementById('inp-details').value.trim() || shop;
     const name    = document.getElementById('inp-name').value.trim()    || '—';
     const bank    = document.getElementById('inp-bank').value.trim()    || '—';
     const nick    = document.getElementById('inp-nick').value.trim()    || '—';
+
+    const now = new Date();
+    const pad = n => String(n).padStart(2,'0');
+    const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const dayStr  = pad(now.getDate()) + ' ' + months[now.getMonth()] + ' ' + now.getFullYear();
+    const timeStr = pad(now.getHours()) + ':' + pad(now.getMinutes()) + ':' + pad(now.getSeconds())
+      + ' ' + (now.getHours() < 12 ? 'AM' : 'PM');
+    const refNo  = 'REF-' + Math.floor(10000000000 + Math.random()*90000000000);
+    const accNo  = Math.floor(1000000000 + Math.random()*9000000000);
 
     document.getElementById('disp-amount').textContent  = amt.toFixed(2);
     document.getElementById('disp-datetime').textContent = dayStr + ' ' + timeStr;
@@ -353,19 +646,18 @@
     document.getElementById('disp-otherpay').textContent= other;
     document.getElementById('disp-reqto').textContent   = name + '\n' + bank;
     document.getElementById('disp-nick').textContent    = nick;
-    document.getElementById('disp-reqamt').textContent  = fmtAmt;
+    document.getElementById('disp-reqamt').textContent  = 'MYR ' + amt.toFixed(2);
 
     show('screen-success');
   }
 
-  function resetFlow() {
-    show('screen-setup');
-  }
-
-  function show(id) {
-    ['screen-setup','screen-processing','screen-success'].forEach(s => {
-      document.getElementById(s).style.display = (s === id) ? 'block' : 'none';
+  function resetAll() {
+    ['inp-shop','inp-ref','inp-details','inp-name','inp-bank','inp-nick'].forEach(id => {
+      document.getElementById(id).value = '';
     });
+    document.getElementById('inp-amount').value = '';
+    document.getElementById('detected-badge').style.display = 'none';
+    show('screen-scan');
   }
 </script>
 </body>
